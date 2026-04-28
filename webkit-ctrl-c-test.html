@@ -2,17 +2,17 @@
 <html>
 <head><meta charset="utf-8"><title>Ctrl+C keyCode test</title></head>
 <body>
-<h1>iPadOS Safari Ctrl+C keyCode 検証</h1>
-<p>iPad + ハードウェアキーボードで以下を試す:</p>
+<h1>iPadOS Safari Ctrl+C keyCode Bug Reproduction</h1>
+<p>Test with an iPad + hardware keyboard (Magic Keyboard etc.):</p>
 <ol>
-  <li>下のtextareaをタップ（フォーカス）</li>
-  <li>Ctrl+A を押す → ログを確認</li>
-  <li>Ctrl+C を押す → ログを確認</li>
-  <li>Ctrl+D を押す → ログを確認</li>
-  <li>通常の Enter を押す → ログを確認</li>
-  <li>Ctrl+E を押す → ログを確認</li>
+  <li>Tap the textarea below to focus it</li>
+  <li>Press <strong>Ctrl+A</strong> → check the log (expect <code>keyCode: 65</code>)</li>
+  <li>Press <strong>Ctrl+C</strong> → check the log (<strong>bug:</strong> <code>keyCode: 13</code> instead of <code>67</code>)</li>
+  <li>Press <strong>Ctrl+D</strong> → check the log (expect <code>keyCode: 68</code>)</li>
+  <li>Press <strong>Enter</strong> (no Ctrl) → check the log (expect <code>keyCode: 13</code>)</li>
+  <li>Press <strong>Ctrl+E</strong> → check the log (expect <code>keyCode: 69</code>)</li>
 </ol>
-<textarea id="input" rows=3 cols=60 placeholder="タップしてからキーを押してください"></textarea>
+<textarea id="input" rows=3 cols=60 placeholder="Tap here, then press keys on your hardware keyboard"></textarea>
 <pre id="log" style="background:#f4f4f4;padding:8px;min-height:200px;font-size:14px"></pre>
 <script>
 const input = document.getElementById('input');
@@ -41,7 +41,7 @@ function append(ev) {
 
 input.addEventListener('keydown', append);
 input.addEventListener('keypress', (ev) => {
-  // keypress は deprecated だが一応
+  // keypress is deprecated but included for completeness
   const info = {
     type:     ev.type,
     key:      ev.key,
