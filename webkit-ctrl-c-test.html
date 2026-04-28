@@ -2,23 +2,42 @@
 <html>
 <head><meta charset="utf-8"><title>Ctrl+C keyCode test</title></head>
 <body>
-<h1>iPadOS Safari Ctrl+C keyCode Bug Reproduction</h1>
-<p>Test with an iPad + hardware keyboard (Magic Keyboard etc.):</p>
+<h1>iPadOS Ctrl+C keyCode=13 — Layer Diagnosis</h1>
+
+<p><strong>Objective:</strong> Identify whether the bug is in UIKit (system shortcut interception)
+or WebKit (DOM event construction).</p>
+
+<h3>Verification checklist</h3>
 <ol>
-  <li>Tap the textarea below to focus it</li>
-  <li>Press <strong>Ctrl+A</strong> → check the log (expect <code>keyCode: 65</code>)</li>
-  <li>Press <strong>Ctrl+C</strong> → check the log (<strong>bug:</strong> <code>keyCode: 13</code> instead of <code>67</code>)</li>
-  <li>Press <strong>Ctrl+D</strong> → check the log (expect <code>keyCode: 68</code>)</li>
-  <li>Press <strong>Enter</strong> (no Ctrl) → check the log (expect <code>keyCode: 13</code>)</li>
-  <li>Press <strong>Ctrl+E</strong> → check the log (expect <code>keyCode: 69</code>)</li>
+  <li><strong>Does <code>copy</code> event fire after Ctrl+C?</strong> → <em>If yes, UIKit routed it as Copy</em></li>
+  <li><strong>Does <code>preventDefault()</code> on keydown stop the <code>copy</code> event?</strong> → <em>If yes, DOM prevention propagates up</em></li>
+  <li><strong>Does <code>preventDefault()</code> <em>also</em> fix keyCode?</strong> → <em>If yes, keyCode corruption is downstream of Copy routing</em></li>
 </ol>
-<textarea id="input" rows=3 cols=60 placeholder="Tap here, then press keys on your hardware keyboard"></textarea>
-<pre id="log" style="background:#f4f4f4;padding:8px;min-height:200px;font-size:14px"></pre>
+
+<hr>
+
+<p>
+  <label>
+    <input type="checkbox" id="preventDefaultToggle" checked>
+    <strong>preventDefault()</strong> on keydown (turn off to see if copy event fires / keyCode changes)
+  </label>
+</p>
+
+<textarea id="input" rows=3 cols=70 placeholder="Tap here, then press keys on your hardware keyboard"></textarea>
+
+<div style="margin-top:8px">
+  <button id="clearBtn">Clear log</button>
+</div>
+
+<pre id="log" style="background:#f4f4f4;padding:8px;min-height:300px;font-size:13px;border:1px solid #ccc;overflow:auto"></pre>
+
 <script>
 const input = document.getElementById('input');
 const log   = document.getElementById('log');
+const toggle = document.getElementById('preventDefaultToggle');
+const clearBtn = document.getElementById('clearBtn');
 
-function append(ev) {
+function append(ev, prefix) {
   const info = {
     type:      ev.type,
     key:       ev.key,
@@ -33,15 +52,25 @@ function append(ev) {
     repeat:    ev.repeat,
     location:  ev.location,
     isComposing: ev.isComposing,
+    defaultPrevented: ev.defaultPrevented,
   };
-  log.textContent += JSON.stringify(info, null, 2) + '\n\n';
+  const line = (prefix ? '[' + prefix + '] ' : '') + JSON.stringify(info, null, 2);
+  log.textContent += line + '\n\n';
   log.scrollTop = log.scrollHeight;
-  ev.preventDefault();
 }
 
-input.addEventListener('keydown', append);
+// ── keydown ──
+input.addEventListener('keydown', (ev) => {
+  append(ev, 'keydown');
+
+  if (toggle.checked) {
+    ev.preventDefault();   // does this stop copy event?
+  }
+  // NOTE: we do NOT call stopPropagation — we want to see if copy event fires naturally
+});
+
+// ── keypress ──
 input.addEventListener('keypress', (ev) => {
-  // keypress is deprecated but included for completeness
   const info = {
     type:     ev.type,
     key:      ev.key,
@@ -52,8 +81,43 @@ input.addEventListener('keypress', (ev) => {
   };
   log.textContent += '[keypress] ' + JSON.stringify(info) + '\n\n';
   log.scrollTop = log.scrollHeight;
-  ev.preventDefault();
+  if (toggle.checked) ev.preventDefault();
 });
+
+// ── beforeinput ──
+input.addEventListener('beforeinput', (ev) => {
+  append(ev, 'beforeinput');
+});
+
+// ── input ──
+input.addEventListener('input', (ev) => {
+  append(ev, 'input');
+});
+
+// ── copy event (key diagnostic: does Ctrl+C fire this?) ──
+document.addEventListener('copy', (ev) => {
+  const info = {
+    type: ev.type,
+    target: ev.target ? ev.target.tagName : null,
+    defaultPrevented: ev.defaultPrevented,
+    clipboardData: ev.clipboardData ? 'present' : 'null',
+  };
+  log.textContent += '[COPY EVENT] ' + JSON.stringify(info) + '\n\n';
+  log.scrollTop = log.scrollHeight;
+  // NOTE: we do NOT preventDefault here — let system copy proceed
+}, true);
+
+// ── keyup ──
+input.addEventListener('keyup', (ev) => {
+  append(ev, 'keyup');
+});
+
+// ── Clear ──
+clearBtn.addEventListener('click', () => { log.textContent = ''; });
+
+// Initial log entry
+log.textContent = '// Tap the textarea and press keys. Toggle preventDefault() to compare.\n'
+  + '// Look for "[COPY EVENT]" after Ctrl+C — that confirms UIKit Copy routing.\n\n';
 </script>
 </body>
 </html>
