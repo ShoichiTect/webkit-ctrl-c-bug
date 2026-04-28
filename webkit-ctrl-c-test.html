@@ -27,9 +27,10 @@ or WebKit (DOM event construction).</p>
 
 <div style="margin-top:8px">
   <button id="clearBtn">Clear log</button>
+  <button id="copyLogBtn">📋 Copy log to clipboard</button>
 </div>
 
-<pre id="log" style="background:#f4f4f4;padding:8px;min-height:300px;font-size:13px;border:1px solid #ccc;overflow:auto"></pre>
+<pre id="log" style="background:#f4f4f4;padding:8px;min-height:300px;font-size:13px;border:1px solid #ccc;overflow:auto;user-select:text;-webkit-user-select:text"></pre>
 
 <script>
 const input = document.getElementById('input');
@@ -95,7 +96,10 @@ input.addEventListener('input', (ev) => {
 });
 
 // ── copy event (key diagnostic: does Ctrl+C fire this?) ──
+// Only log copy events that originate from the textarea (user pressing Ctrl+C
+// while focused there). Cmd+C / Ctrl+C on the log area for copy-paste is ignored.
 document.addEventListener('copy', (ev) => {
+  if (ev.target !== input && !input.contains(ev.target)) return;
   const info = {
     type: ev.type,
     target: ev.target ? ev.target.tagName : null,
@@ -114,6 +118,24 @@ input.addEventListener('keyup', (ev) => {
 
 // ── Clear ──
 clearBtn.addEventListener('click', () => { log.textContent = ''; });
+
+// ── Copy log ──
+document.getElementById('copyLogBtn').addEventListener('click', () => {
+  const text = log.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = log.textContent;
+    log.textContent += '// 📋 Log copied to clipboard!\n\n';
+    log.scrollTop = log.scrollHeight;
+    setTimeout(() => { log.textContent = orig; }, 1500);
+  }).catch(() => {
+    // fallback: select all text
+    const range = document.createRange();
+    range.selectNodeContents(log);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+});
 
 // Initial log entry
 log.textContent = '// Tap the textarea and press keys. Toggle preventDefault() to compare.\n'
