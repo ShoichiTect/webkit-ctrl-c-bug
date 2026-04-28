@@ -47,45 +47,79 @@ key="c", code="KeyC", keyCode=67, which=67, ctrlKey=true
 ✅ **Normal.** `e.key = "c"` and `e.code = "KeyC"` are correct, confirming that
 the physical keystroke is properly decoded at the hardware layer.
 
-### Layer 2 – UIKit (iPadOS input processing layer)
-❌ **Primary suspicion.** On iPadOS, Ctrl+C is a system shortcut for "Copy".
-UIKit intercepts the combination via `UIKeyCommand` / `UIResponder` before it
-reaches WebKit. The key observation:
+### Layer 2 – UIKit / UIKeyCommand (system shortcut interception)
+❌ **Primary cause.** On iPadOS, Ctrl+C is a system shortcut for Copy.
+UIKit intercepts it at the **system level** via `UIKeyCommand` / `UIResponder`
+— NOT at the DOM event level. Verified evidence:
 
-| Property | Value | Correct? |
+| Experiment | Result | Implication |
 |---|---|---|
-| `e.key` | `"c"` | ✅ correct (modern path preserved) |
-| `e.keyCode` | `13` | ❌ **wrong** (legacy path corrupted) |
+| `preventDefault()` on keydown | **keyCode stays 13** | Corruption happens before JS can intervene |
+| `preventDefault()` ON → `[COPY EVENT]` | **Does NOT fire** | UIKit consumes Copy at system level, no DOM copy event |
+| `preventDefault()` OFF → `[COPY EVENT]` | **Does NOT fire** | Same — system-level copy, not DOM-level |
+| `preventDefault()` OFF → `beforeinput` | **Fires with CR** | WebKit treats corrupted event as text input (Enter/CR) |
 
-This split suggests that UIKit's interception corrupts the legacy keyCode
-mapping while preserving the modern `key` property. The fact that **only
-Ctrl+C** (the one combination that is a system shortcut) is affected is a
-strong signal that UIKit's shortcut handling is the trigger.
+Key observation:
 
-### Layer 3 – WebKit (DOM event generation)
-⚠️ **Not entirely innocent.** WebKit constructs the `KeyboardEvent` object and
-is ultimately responsible for filling `keyCode`. Even if UIKit passes
-corrupted data downstream, WebKit chooses the fallback mapping that maps
-the event to `keyCode=13` (Enter) instead of `keyCode=67` (C).
+| Property | Value | Correct? | Path |
+|---|---|---|---|
+| `e.key` | `"c"` | ✅ correct | modern API — takes a different code path |
+| `e.code` | `"KeyC"` | ✅ correct | physical key location — separate path |
+| `e.keyCode` | `13` | ❌ **wrong** | legacy compat — **corrupted by UIKit** |
+| DOM `copy` event | **never fires** | N/A | UIKit does system pasteboard, not DOM |
 
-The cleanest description:
+### Layer 3 – WebKit (DOM event construction)
+⚠️ **Contributing factor.** WebKit constructs the `KeyboardEvent` object and
+fills `keyCode` with the value received from the system layer. The corruption
+happens before WebKit receives the event, so WebKit cannot fix it.
 
-> **UIKit's system shortcut interception corrupts the legacy keyCode mapping,
-> and WebKit's compatibility layer does not recover from this corruption,
-> falling back to keyCode=13.**
+However, WebKit **chooses the mapping** through its legacy keyCode
+compatibility code. Even with a corrupted system value, WebKit could
+theoretically recover the correct keyCode from `e.key` (which is correct).
+The fact that it does not is a secondary bug in WebKit's compatibility layer.
 
-## Suggested verification experiments
+### Visual data flow
 
-To further isolate the responsible layer:
+```
+[Hardware Keyboard]
+    ↓
+[UIKit / UIKeyCommand]
+    ├── Ctrl+C intercepted as system Copy
+    ├── keyCode corrupted → 13 (Enter)  ← ❌ PRIMARY BUG
+    └── e.key = "c" preserved correctly
+    ↓  (no DOM copy event generated)
+[WebKit]
+    ├── Receives corrupted keyCode
+    ├── Could recover from e.key but doesn't  ← ⚠️ SECONDARY BUG
+    └── Faithfully reflects keyCode=13 in KeyboardEvent
+    ↓
+[keydown]  e.key="c"  keyCode=13  ctrlKey=true
+    ↓
+[keypress] keyCode=13 (CR character)
+    ↓
+[beforeinput → input]  ← text input processing
+```
 
-1. **`preventDefault()` on keydown** — If intercepting the event before
-   UIKit processes it helps, this would confirm UIKit involvement.
-2. **`contenteditable` div instead of `<textarea>`** — Rules out any
-   textarea-specific code path.
-3. **WKWebView (native app)** — If the bug reproduces in a WKWebView-based
-   app, the bug is definitely in UIKit → WebKit plumbing, not Safari-specific.
-4. **Non-WebKit browser on iPadOS** — Not possible due to Apple's policy
-   (all browsers on iPadOS are WebKit-based), but worth noting.
+### Summary
+
+> **UIKit intercepts Ctrl+C at the system level (UIKeyCommand), corrupting
+> keyCode to 13. WebKit receives the corrupted value and passes it through
+> to the DOM without correction, despite having the correct `e.key` available
+> for recovery. No DOM `copy` event is generated because the copy operation
+> is handled entirely at the system level.**
+
+## Verification experiments (results)
+
+| # | Test | Result | Conclusion |
+|---|---|---|---|
+| 1 | `preventDefault()` on keydown | **keyCode remains 13** | Corruption predates JS event handling |
+| 2 | DOM `copy` event listener | **Never fires** | Copy is system-level, not DOM-level |
+| 3 | `preventDefault()` ON → copy event | **Never fires** | Same as above |
+| 4 | `contenteditable` | (not tested) | Would confirm element-type independence |
+| 5 | WKWebView | (not tested) | Would isolate from Safari-specific code |
+
+Experiments 1-3 were performed on iPadOS 26.4 / Safari 26.4 with Magic
+Keyboard. Raw event log data is available in the repository.
 
 ## Impact
 Applications relying on `keyCode` for keyboard handling — terminal emulators
