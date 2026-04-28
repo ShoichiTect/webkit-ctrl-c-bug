@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Ctrl+C keyCode test</title></head>
+<body>
+<h1>iPadOS Safari Ctrl+C keyCode 検証</h1>
+<p>iPad + ハードウェアキーボードで以下を試す:</p>
+<ol>
+  <li>下のtextareaをタップ（フォーカス）</li>
+  <li>Ctrl+A を押す → ログを確認</li>
+  <li>Ctrl+C を押す → ログを確認</li>
+  <li>Ctrl+D を押す → ログを確認</li>
+  <li>通常の Enter を押す → ログを確認</li>
+  <li>Ctrl+E を押す → ログを確認</li>
+</ol>
+<textarea id="input" rows=3 cols=60 placeholder="タップしてからキーを押してください"></textarea>
+<pre id="log" style="background:#f4f4f4;padding:8px;min-height:200px;font-size:14px"></pre>
+<script>
+const input = document.getElementById('input');
+const log   = document.getElementById('log');
+
+function append(ev) {
+  const info = {
+    type:      ev.type,
+    key:       ev.key,
+    code:      ev.code,
+    keyCode:   ev.keyCode,
+    which:     ev.which,
+    charCode:  ev.charCode ?? 'N/A',
+    ctrlKey:   ev.ctrlKey,
+    altKey:    ev.altKey,
+    shiftKey:  ev.shiftKey,
+    metaKey:   ev.metaKey,
+    repeat:    ev.repeat,
+    location:  ev.location,
+    isComposing: ev.isComposing,
+  };
+  log.textContent += JSON.stringify(info, null, 2) + '\n\n';
+  log.scrollTop = log.scrollHeight;
+  ev.preventDefault();
+}
+
+input.addEventListener('keydown', append);
+input.addEventListener('keypress', (ev) => {
+  // keypress は deprecated だが一応
+  const info = {
+    type:     ev.type,
+    key:      ev.key,
+    keyCode:  ev.keyCode,
+    which:    ev.which,
+    charCode: ev.charCode,
+    ctrlKey:  ev.ctrlKey,
+  };
+  log.textContent += '[keypress] ' + JSON.stringify(info) + '\n\n';
+  log.scrollTop = log.scrollHeight;
+  ev.preventDefault();
+});
+</script>
+</body>
+</html>
